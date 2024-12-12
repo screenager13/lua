@@ -524,7 +524,352 @@ const PaymentForm: React.FC = () => {
 export default PaymentForm;
 ```
 
-**Podsumowanie**
-Frontend Zirka Market Place został zaprojektowany z myślą o wydajności i łatwości użytkowania. Dzięki zastosowaniu Vite, React i TypeScript, aplikacja oferuje
-nowoczesny interfejs użytkownika, który jest zarówno szybki, jak i responsywny. Implementacja została zoptymalizowana pod kątem przyszłego rozwoju, co ułatwia
-dodawanie nowych funkcji oraz dostosowywanie aplikacji do zmieniających się wymagań użytkowników.
+# ZirkaMarketPlaceApi - Backend i Baza Danych
+
+## Opis projektu
+
+### Od strony biznesowej
+Backend projektu **ZirkaMarketPlaceApi** został zaprojektowany jako zaawansowana platforma marketplace. Jego celem jest zapewnienie stabilnego i skalowalnego zaplecza dla aplikacji frontendowej, umożliwiając obsługę:
+
+1. **Kategorii i Produktów**:
+   - Tworzenie, edytowanie i usuwanie kategorii oraz powiązanych produktów.
+   - Relacja "One-to-Many" między kategoriami a produktami pozwala na grupowanie produktów w odpowiednich kategoriach.
+
+2. **Użytkowników**:
+   - Obsługa rejestracji i logowania użytkowników za pomocą JWT Authentication.
+   - Role i uprawnienia zintegrowane z **ASP.Net Identity**.
+
+
+---
+
+### Od strony technicznej
+
+1. **Technologie Backend**:
+   - **ASP.NET Core**: Sercem backendu jest framework .NET Core, oferujący wysoką wydajność i skalowalność.
+   - **Entity Framework Core**: Używany jako ORM do zarządzania danymi i migracjami bazy danych.
+   - **FluentValidation**: Walidacja danych DTO (Data Transfer Object).
+   - **Google Cloud Storage**: Przechowywanie i zarządzanie plikami.
+   - **JWT Authentication**: Obsługa uwierzytelniania i autoryzacji użytkowników.
+   - **NuGetPacket**: Łatwa praca z API.
+   - **Microsoft.Entity.Framework** - łatwa praca z bazą danych
+
+2. **Struktura bazy danych**:
+   Baza danych została zaprojektowana w PostgreSQL, co pozwala na efektywne zarządzanie danymi w projekcie. Struktura bazy danych jest zgodna z poniższym schematem:
+
+   **Tabela: AspNetUsers (Identity)**:
+   - Kolumny:
+     - Id (Guid)
+     - FirstName, LastName (string)
+     - UserName, NormalizedUserName (string)
+     - Email, NormalizedEmail (string)
+     - PasswordHash (string)
+     - SecurityStamp (string)
+     - CreatedDate, UpdatedDate (DateTime)
+     - CreatedBy, UpdatedBy (Guid)
+     - IsDeleted (bool)
+
+   **Tabela: AspNetRoles**:
+   - Kolumny:
+     - Id (Guid)
+     - Name (string)
+     - NormalizedName (string)
+     - ConcurrencyStamp (string)
+
+   **Tabela: AspNetUserRoles**:
+   - Kolumny:
+     - UserId (Guid)
+     - RoleId (Guid)
+
+   **Tabela: Categories**:
+   - Kolumny:
+     - Id (Guid)
+     - Name (string)
+     - Description (string)
+     - PhotoUrl (string)
+     - CreatedDate, UpdatedDate (DateTime)
+     - CreatedBy, UpdatedBy (Guid)
+     - IsDeleted (bool)
+   - Relacja:
+     - One-to-Many z tabelą **Products**.
+
+   **Tabela: Products**:
+   - Kolumny:
+     - Id (Guid)
+     - Name (string)
+     - Description (string)
+     - Price (decimal)
+     - PhotoUrl (string)
+     - AvailableAmount (int)
+     - CategoryId (Guid, klucz obcy)
+   - Relacja:
+     - Many-to-One z tabelą **Categories**.
+
+---
+
+### Relacje w bazie danych
+Relacja "One-to-Many" między kategoriami a produktami jest skonfigurowana w następujący sposób:
+
+**Kod w CategoryConfiguration.cs**:
+```csharp
+builder.HasMany(c => c.Products)
+    .WithOne(p => p.Category)
+    .HasForeignKey(p => p.CategoryId)
+    .OnDelete(DeleteBehavior.Cascade);
+``` 
+**Kod w ProductConfiguration.cs**:
+```csharp
+builder.Property(p => p.CategoryId)
+    .IsRequired();
+```
+
+    
+## Struktura projektu i opis folderów
+
+1. **Application**:
+   - **Dtos**: Przechowuje modele DTO (np. `ProductDto`, `CategoryDto`), które są używane do przesyłania danych między warstwami aplikacji.
+   - **Services**: Zawiera logikę biznesową aplikacji, implementuje usługi do obsługi logiki biznesowej, takie jak `CategoryService` i `ProductService`.
+   - **Validators**: Odpowiada za walidację danych wejściowych przy użyciu FluentValidation (np. `ProductDtoValidator`).
+
+2. **Domain**:
+   - **Models**: Definicje głównych modeli danych, które reprezentują encje w bazie danych (np. `Product`, `Category`).
+
+3. **Infrastructure**:
+   - **Data**: Konfiguracja **Entity Framework Core**, pliki migracji oraz klasy odpowiedzialne za konfigurację bazy danych (np. `ApplicationDbContext`, `CategoryConfiguration`).
+   - **Interfaces**: Definiuje interfejsy repozytoriów i usług wykorzystywane w innych częściach aplikacji.
+   - **Migrations**: Zawiera migracje bazy danych utworzone przez **Entity Framework Core**.
+   - **Options**: Konfiguracja opcji używanych w aplikacji, takich jak walidacja danych lub ustawienia JWT.
+   - **Repositories**: Zawiera klasy repozytoriów obsługujące dostęp do danych.
+
+4. **Presentation**:
+   - **Controllers**: Odpowiadają za obsługę żądań HTTP (np. `CategoryController`, `ProductController`).
+   - **Extensions**: Zawiera rozszerzenia dla aplikacji, np. `AuthenticationExtension` do konfiguracji JWT Authentication.
+   - **Middlewares**: Zawiera middleware, np. `GlobalExceptionHandler` do obsługi wyjątków.
+   - **Helpers**: Przykładowe funkcje pomocnicze, np. do konwersji plików lub zarządzania danymi wejściowymi.
+   - **Services**: Klasy dostarczające różne funkcje wspomagające warstwę kontrolerów.
+   - **Program.cs**: Główny punkt wejścia aplikacji, zawierający konfigurację serwera i zależności aplikacji.
+
+## Przykłady kodu
+
+### Walidator dla `ProductDto`:
+
+```csharp
+using FluentValidation;
+using Application.Dtos;
+using Microsoft.Extensions.Options;
+using Infrastructure.Options;
+
+namespace Application.Validators
+{
+    public class ProductDtoValidator : AbstractValidator<ProductDto>
+    {
+        public ProductDtoValidator(IOptions<ProductValidationOptions> productValidationOptions)
+        {
+            var productValidation = productValidationOptions.Value;
+
+            RuleFor(p => p.Name)
+                .NotEmpty().WithMessage("The 'Name' field is required.")
+                .MaximumLength(productValidation.NameMaxLength)
+                .WithMessage($"The 'Name' field must not exceed {productValidation.NameMaxLength} characters.");
+
+            RuleFor(p => p.Description)
+                .NotEmpty().WithMessage("The 'Description' field is required.")
+                .MaximumLength(productValidation.DescriptionMaxLength)
+                .WithMessage($"The 'Description' field must not exceed {productValidation.DescriptionMaxLength} characters.");
+        }
+    }
+}
+```
+### Walidator dla `CategoryDto`:
+
+```csharp
+using FluentValidation;
+using Application.Dtos;
+using Microsoft.Extensions.Options;
+using Infrastructure.Options;
+
+namespace Application.Validators
+{
+    public class CategoryDtoValidator : AbstractValidator<CategoryDto>
+    {
+        public CategoryDtoValidator(IOptions<CategoryValidationOptions> categoryValidationOptions)
+        {
+            var categoryValidation = categoryValidationOptions.Value;
+
+            RuleFor(c => c.Name)
+                .NotEmpty().WithMessage("The 'Name' field is required.")
+                .MaximumLength(categoryValidation.NameMaxLength)
+                .WithMessage($"The 'Name' field must not exceed {categoryValidation.NameMaxLength} characters.");
+
+            RuleFor(c => c.Description)
+                .NotEmpty().WithMessage("The 'Description' field is required.")
+                .MaximumLength(categoryValidation.DescriptionMaxLength)
+                .WithMessage($"The 'Description' field must not exceed {categoryValidation.DescriptionMaxLength} characters.");
+
+            RuleFor(c => c.PhotoUrl)
+                .NotEmpty().WithMessage("The 'PhotoUrl' field is required.");
+        }
+    }
+}
+```
+### Serwis do przechowywania plików:
+
+```csharp
+using System.Text;
+using Application.Interfaces;
+using Google.Apis.Auth.OAuth2;
+using Google.Cloud.Storage.V1;
+using Infrastructure.Options;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
+
+namespace Application.Services
+{
+    public class FileStorageService : IFileStorageService
+    {
+        private readonly string _bucketName;
+        private readonly StorageClient _storageClient;
+
+        public FileStorageService(IOptions<GoogleStorageOptions> options)
+        {
+            _bucketName = options.Value.BucketName;
+            var credential = GoogleCredential.FromFile(options.Value.CredentialsPath);
+            _storageClient = StorageClient.Create(credential);
+        }
+
+        public async Task<string> UploadPhotoAsync(IFormFile file, string folder)
+        {
+            if (file == null || file.Length == 0)
+                throw new ArgumentException("File is null or empty", nameof(file));
+
+            var objectName = $"{folder}/{Guid.NewGuid()}_{file.FileName}";
+
+            await using var stream = file.OpenReadStream();
+            await _storageClient.UploadObjectAsync(_bucketName, objectName, file.ContentType, stream);
+            return $"https://storage.googleapis.com/{_bucketName}/{objectName}";
+        }
+    }
+}
+```
+### Controller serwisa do przechowywania plików:
+
+```csharp
+using Application.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Presentation.Controllers
+{
+    [ApiController]
+    [Route("api/file/")]
+    public class FileStorageController : ControllerBase
+    {
+        private readonly IFileStorageService _fileStorageService;
+
+        public FileStorageController(IFileStorageService fileStorageService)
+        {
+            _fileStorageService = fileStorageService;
+        }
+
+        [HttpPost("avatar")]
+        public async Task<IActionResult> UploadFile(IFormFile file, [FromQuery] string folder = "avatars")
+        {
+            try
+            {
+                var url = await _fileStorageService.UploadPhotoAsync(file, folder);
+                return Ok(new { Url = url });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error uploading file: {ex.Message}");
+            }
+        }
+    }
+}
+```
+## Problemy i ich rozwiązania
+
+### Problem: Brak funkcjonalności wylogowania użytkownika
+- **Opis problemu**: Aplikacja brakowała funkcji wylogowania użytkownika. Użytkownicy pozostawali zalogowani, nawet jeśli token dostępu oraz odświeżania były przechowywane w plikach cookie. Brakowało mechanizmu, aby usuwać te pliki cookie w momencie, gdy użytkownik wybierał opcję wylogowania.
+- **Rozwiązanie**: Dodano metodę `Logout()` do `UserService`, która usuwa pliki cookie o nazwach "AccessToken" i "RefreshToken" z kontekstu HTTP. Dzięki temu po wylogowaniu użytkownika, jego sesja staje się nieważna. Następnie dodano odpowiedni endpoint `POST /logout` w kontrolerze `UserController`, aby umożliwić korzystanie z tej funkcji.
+![alt text](image.png)
+![alt text](image-1.png)
+
+### Problem: Brak odczytu tokenów z plików cookie w autoryzacji
+- **Opis problemu**: W procesie autoryzacji aplikacja nie była w stanie odczytać tokenów JWT przechowywanych w plikach cookie, ponieważ były one oczekiwane jedynie w nagłówkach HTTP (standardowe zachowanie JWT). To ograniczało elastyczność aplikacji, szczególnie w scenariuszach, gdzie tokeny były przechowywane w cookie, np. w aplikacjach SPA.
+- **Rozwiązanie**: Dodano zdarzenie `OnMessageReceived` w konfiguracji JWT w `AuthenticationExtensions`. Dzięki temu aplikacja odczytuje token z pliku cookie "AccessToken" i przypisuje go do `context.Token`, co pozwala na jego wykorzystanie w procesie autoryzacji.
+![alt text](image-2.png)
+
+### Problem: Nieprawidłowe ustawienia dla odświeżania tokenów w plikach cookie
+- **Opis problemu**: W konfiguracji plików cookie brakowało odpowiednich ustawień dla ich wygasania i ochrony. Pliki cookie były mniej bezpieczne i potencjalnie mogły być narażone na kradzież.
+- **Rozwiązanie**: Dodano konfigurację plików cookie w `AuthenticationExtensions`, w tym nazwę pliku cookie, ustawienia dla automatycznego wygasania (SlidingExpiration) oraz czas życia (ExpireTimeSpan). Dzięki temu tokeny są automatycznie odświeżane, jeśli użytkownik pozostaje aktywny w aplikacji.
+`
+![alt text](image-3.png)
+
+### Problem: Nieprawidłowe typy danych w walidatorach i usługach
+
+1. **Opis problemu**:
+   - **ProductService** korzystał z walidatora dla `ProductDto`, zamiast dla `CreateProductDto`. Prowadziło to do błędów walidacji, ponieważ struktura `ProductDto` i `CreateProductDto` różniła się.
+   - W `ProductDtoValidator` typem walidowanym był `ProductDto`, co było niezgodne z faktycznym użyciem w procesie tworzenia produktu.
+
+2. **Rozwiązanie**:
+   - Zmieniono typ walidatora w `ProductService` na `CreateProductDto` oraz dostosowano implementację walidatora `ProductDtoValidator`, aby obsługiwał `CreateProductDto`.
+
+**Kod przed zmianą:**
+![alt text](image-4.png)
+
+**Kod po zmianie:** 
+![alt text](image-5.png)
+
+**Kod walidatora po zmianie:**
+![alt text](code8.png)
+
+### Problem: Nadmiarowe pola w DTO i niepotrzebna logika w kontrolerze
+
+1. **Opis problemu**:
+   - `LoginDto` zawierał pola `IsGoogleLogin` i `GoogleToken`, które były wykorzystywane do rozróżniania logowania tradycyjnego i logowania za pomocą Google. Wprowadzało to nadmiarową logikę i zwiększało złożoność DTO oraz kodu kontrolera.
+   - W `UserController` znajdowała się rozbudowana logika warunkowa sprawdzająca wartość pola `IsGoogleLogin`, co zwiększało złożoność kodu i utrudniało jego utrzymanie.
+
+2. **Rozwiązanie**:
+   - Z `LoginDto` usunięto pola `IsGoogleLogin` i `GoogleToken`.
+   - Logikę rozróżniania logowania tradycyjnego i Google przeniesiono na poziom serwisu użytkownika (`UserService`) lub w całości zastąpiono uproszczonym podejściem.
+   - W `UserController` uproszczono metodę `LoginUser`, usuwając warunki związane z logowaniem Google.
+
+**Kod przed zmianą**:
+![alt text](code9.png)
+
+**Kod po zmianie:**
+![alt text](code10.png)
+
+**Kod kontrolera przed zmianie:**
+![alt text](code1`.png)
+
+**Kod kontrolera po zmianie:**
+![alt text](code12.png)
+
+### Problem: Niespójność w typach danych zwracanych przez metody serwisu i kontrolera
+
+1. **Opis problemu**:
+   - Metoda `GetAllCategoriesAsync` w serwisie `CategoryService` zwracała dane typu `IEnumerable<CategoryDto>`, podczas gdy inne metody w serwisie, takie jak `GetCategoryByIdAsync` czy `CreateCategoryAsync`, zwracały dane typu `CategoryResponseDto`.
+   - To prowadziło do niespójności w strukturze danych zwracanych przez API oraz mogło powodować trudności w integracji z frontendem.
+   - W kontrolerze `CategoryController` występowała niespójność w trasie API — użyto `api/category`, co nie było zgodne z konwencją liczby mnogiej (`api/categories`).
+
+2. **Rozwiązanie**:
+   - **Zmiana zwracanego typu**:
+     - W metodzie `GetAllCategoriesAsync` zmieniono typ zwracanych danych na `IEnumerable<CategoryResponseDto>`, aby zachować spójność z innymi metodami w serwisie.
+     - Zmiana ta wymagała aktualizacji w interfejsie `ICategoryService` oraz odpowiedniej adaptacji danych w implementacji serwisu.
+   - **Poprawa trasy API**:
+     - W kontrolerze `CategoryController` zmieniono trasę z `api/category` na `api/categories`, co poprawiło czytelność i zgodność z konwencją RESTful.
+
+**Kod serwisu:**
+![alt text](code14.png)
+
+**Kod kontrolera przed zmianą:**
+![alt text](code16.png)
+
+**Kod kontrolera po zmianie:**
+![alt text](code17.png)
+
+
+
+### ***Photo z Jiry Dashboard***: 
+# *Podsumowanie:*
+### Frontend i Backend Zirka Market Place został zaprojektowany z myślą o wydajności i łatwości użytkowania. Dzięki zastosowaniu Vite, React i TypeScript, aplikacja oferuje nowoczesny interfejs użytkownika, który jest zarówno szybki, jak i responsywny. Implementacja została zoptymalizowana pod kątem przyszłego rozwoju, co ułatwia dodawanie nowych funkcji oraz dostosowywanie aplikacji do zmieniających się wymagań użytkowników.
